@@ -124,6 +124,23 @@ Player bercabang otomatis: `null` → placeholder, ada `src` → elemen `<video>
 sungguhan dengan event `loadedmetadata` / `timeupdate` / `ended` tersambung.
 Mau HLS? Cukup tambah cabang di sini, komponen tidak perlu disentuh.
 
+## Fitur
+
+Pemutar:
+- play/pause, ±10 detik, seek klik, volume, mute, layar penuh
+- kecepatan putar 0,5×–2×, picture-in-picture, subtitle (tombol CC)
+- buffered bar + spinner saat buffering
+- kontrol auto-hide saat idle
+- HLS (`.m3u8`) lewat hls.js, dimuat malas
+
+Keyboard: `Spasi`/`k` putar-jeda · `←`/`j` mundur 10 detik · `→`/`l` maju
+10 detik · `f` layar penuh · `m` bisu · `i` picture-in-picture · `Esc` tutup
+
+Katalog:
+- beranda dengan hero sorotan dan baris per folder
+- pencarian: judul, genre, pemain, tahun, path file
+- Daftar Saya dan Lanjutkan Tonton (tersimpan di localStorage)
+
 ## Yang sudah diuji
 
 Dijalankan di browser sungguhan, bukan sekadar ditulis:
@@ -144,11 +161,13 @@ Dijalankan di browser sungguhan, bukan sekadar ditulis:
 - **Path traversal diblokir**: `../../etc/passwd`, `%2e%2e/`, dsb. semuanya
   hanya mengembalikan `index.html`, tidak pernah isi file
 - Daftar Saya, pencarian, modal detail, navigasi — semua jalan
-
-Catatan: tombol Picture-in-picture belum bisa saya buktikan lewat pengujian
-otomatis karena `requestPictureInPicture()` mensyaratkan gestur pengguna asli
-(klik skrip tidak dihitung). Kodenya ada dan `document.pictureInPictureEnabled`
-bernilai true; di browser asli tombolnya akan bekerja.
+- **Picture-in-picture**: diuji dengan klik dan tombol keyboard asli (event
+  input CDP, bukan klik skrip) — masuk PiP berhasil
+  (`document.pictureInPictureElement` = VIDEO), tombol jadi `is-active` +
+  `aria-pressed="true"`, klik ulang keluar PiP, dan menutup player saat masih
+  di PiP otomatis menutup jendela mengambangnya
+- **Shortcut keyboard**: `i` masuk/keluar PiP — terverifikasi lewat event
+  keyboard CDP
 
 ### Catatan kejujuran
 

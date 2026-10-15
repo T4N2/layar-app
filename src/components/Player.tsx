@@ -50,7 +50,13 @@ export default function Player({ item, onClose }: PlayerProps) {
   const [ccOn, setCcOn] = useState(true)
   const [idle, setIdle] = useState(false)
   const [hlsError, setHlsError] = useState<string | null>(null)
+  const [isPip, setIsPip] = useState(false)
   const toast = useToast()
+
+  const pipSupported = useMemo(
+    () => typeof document !== 'undefined' && document.pictureInPictureEnabled === true,
+    [],
+  )
 
   /* Nilai terbaru untuk dibaca dari dalam timer, disinkronkan lewat effect. */
   const playingRef = useRef(playing)
@@ -180,6 +186,8 @@ export default function Player({ item, onClose }: PlayerProps) {
     }
     const onWaiting = () => setWaiting(true)
     const onPlaying = () => setWaiting(false)
+    const onEnterPip = () => setIsPip(true)
+    const onLeavePip = () => setIsPip(false)
 
     sync()
     v.addEventListener('loadedmetadata', sync)
@@ -190,6 +198,8 @@ export default function Player({ item, onClose }: PlayerProps) {
     v.addEventListener('waiting', onWaiting)
     v.addEventListener('playing', onPlaying)
     v.addEventListener('stalled', onWaiting)
+    v.addEventListener('enterpictureinpicture', onEnterPip)
+    v.addEventListener('leavepictureinpicture', onLeavePip)
     return () => {
       v.removeEventListener('loadedmetadata', sync)
       v.removeEventListener('canplay', sync)
@@ -199,6 +209,8 @@ export default function Player({ item, onClose }: PlayerProps) {
       v.removeEventListener('waiting', onWaiting)
       v.removeEventListener('playing', onPlaying)
       v.removeEventListener('stalled', onWaiting)
+      v.removeEventListener('enterpictureinpicture', onEnterPip)
+      v.removeEventListener('leavepictureinpicture', onLeavePip)
     }
   }, [])
 
@@ -240,6 +252,10 @@ export default function Player({ item, onClose }: PlayerProps) {
     document.body.classList.add('no-scroll')
     return () => {
       document.body.classList.remove('no-scroll')
+      // Keluar dari PiP juga kalau player dibongkar lewat jalur lain.
+      if (document.pictureInPictureElement) {
+        void document.exitPictureInPicture().catch(() => {})
+      }
       const p = progressRef.current
       if (p.duration > 0) saveProgress(p.id, p.current / p.duration)
     }
@@ -267,8 +283,39 @@ export default function Player({ item, onClose }: PlayerProps) {
   const handleClose = useCallback(() => {
     const p = progressRef.current
     if (p.duration > 0) saveProgress(p.id, p.current / p.duration)
+    // Jangan tinggalkan jendela PiP mengambang setelah player ditutup.
+    if (document.pictureInPictureElement) {
+      void document.exitPictureInPicture().catch(() => {})
+    }
     onClose()
   }, [onClose])
+
+  /* ---------------- picture-in-picture ----------------
+     Dideklarasikan SEBELUM efek keyboard: array dependency efek itu
+     dievaluasi saat render, jadi referensi ke bawah akan kena TDZ. */
+  const togglePip = useCallback(async () => {
+    const v = videoRef.current
+    if (!v) return
+
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture()
+        return
+      }
+      if (!pipSupported) {
+        toast.show('Browser ini tidak mendukung picture-in-picture')
+        return
+      }
+      await v.requestPictureInPicture()
+    } catch (err) {
+      // PiP mensyaratkan gestur pengguna asli; klik programatik ditolak.
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        toast.show('Tekan tombol PiP langsung untuk mengaktifkan')
+      } else {
+        toast.show('Gagal mengaktifkan picture-in-picture')
+      }
+    }
+  }, [pipSupported, toast])
 
   /* ---------------- keyboard ---------------- */
   useEffect(() => {
@@ -305,12 +352,17 @@ export default function Player({ item, onClose }: PlayerProps) {
       if (e.key === 'm') {
         setMuted((m) => !m)
         wake()
+        return
+      }
+      if (e.key === 'i') {
+        void togglePip()
+        wake()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleClose, seekBy, togglePlay, wake, speedOpen])
+  }, [handleClose, seekBy, togglePlay, wake, speedOpen, togglePip])
 
   /* ---------------- layar penuh ---------------- */
   const toggleFullscreen = () => {
@@ -320,23 +372,6 @@ export default function Player({ item, onClose }: PlayerProps) {
       void document.exitFullscreen()
     } else {
       void el.requestFullscreen?.()
-    }
-  }
-
-  /* ---------------- picture-in-picture ---------------- */
-  const togglePip = async () => {
-    const v = videoRef.current
-    if (!v) return
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture()
-      } else if (document.pictureInPictureEnabled) {
-        await v.requestPictureInPicture()
-      } else {
-        toast.show('Picture-in-picture tidak didukung browser ini')
-      }
-    } catch {
-      toast.show('Gagal mengaktifkan picture-in-picture')
     }
   }
 
@@ -367,7 +402,10 @@ export default function Player({ item, onClose }: PlayerProps) {
             src={isHls ? undefined : stream.src}
             poster={stream.poster}
             playsInline
-            crossOrigin="anonymous"
+            /* crossOrigin hanya perlu kalau ada <track> lintas-origin. Kalau
+               dipasang terus, video lintas-origin TANPA header CORS malah
+               gagal dimuat. */
+            crossOrigin={hasSubtitles ? 'anonymous' : undefined}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
             onEnded={() => setPlaying(false)}
@@ -510,9 +548,18 @@ export default function Player({ item, onClose }: PlayerProps) {
 
             <span className="badge-soft">{stream ? stream.kind.toUpperCase() : 'DEMO'}</span>
 
-            <button type="button" aria-label="Picture-in-picture" onClick={togglePip}>
-              <IconPip />
-            </button>
+            {pipSupported && (
+              <button
+                type="button"
+                aria-label="Picture-in-picture"
+                aria-pressed={isPip}
+                title="Picture-in-picture (i)"
+                className={isPip ? 'is-active' : ''}
+                onClick={togglePip}
+              >
+                <IconPip />
+              </button>
+            )}
             <button type="button" aria-label="Layar penuh" onClick={toggleFullscreen}>
               <IconFullscreen />
             </button>

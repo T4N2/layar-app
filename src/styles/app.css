@@ -1017,6 +1017,13 @@
 .controls-row button:hover {
   background: rgba(255, 255, 255, 0.14);
 }
+.controls-row button.is-active {
+  background: rgba(245, 165, 36, 0.2);
+  color: var(--accent);
+}
+.controls-row button.is-active svg {
+  fill: var(--accent);
+}
 .controls-row button svg {
   width: 19px;
   height: 19px;
