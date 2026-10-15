@@ -128,18 +128,27 @@ Mau HLS? Cukup tambah cabang di sini, komponen tidak perlu disentuh.
 
 Dijalankan di browser sungguhan, bukan sekadar ditulis:
 
-- `tsc -b` bersih, `oxlint` 0 warning, `vite build` sukses (40 modul)
+- `tsc -b` bersih, `oxlint` 0 warning, `vite build` sukses (41 modul)
 - Katalog termuat dari folder lokal: 10 file dari `D:/Film/Video`
 - **Pemutaran nyata**: video termuat, durasi dibaca dari file
   (15,02 detik dan 508,24 detik / 8:28 pada file 63 MB)
 - **Seek**: klik di 80% → `currentTime` lompat ke ~13 detik, bar ikut menyesuaikan
 - **±10 detik**: mundur dari 13,26 → ~4 detik, label ikut berubah
+- **Buffered bar**: saat memutar file 63 MB, bar buffer mendahului posisi putar
+  (7,2% vs 0,67%)
+- **Kecepatan putar**: menu 6 opsi (0,5×–2×), pilih 1,5× → `playbackRate` jadi 1,5
+  dan label muncul di kontrol
 - **Progres tersimpan**: keluar player → baris "Lanjutkan Tonton" muncul
 - **HTTP Range** di server: `206 Partial Content` + `Content-Range` benar,
   suffix range (`bytes=-50`) benar, id ngawur → `404`
 - **Path traversal diblokir**: `../../etc/passwd`, `%2e%2e/`, dsb. semuanya
   hanya mengembalikan `index.html`, tidak pernah isi file
 - Daftar Saya, pencarian, modal detail, navigasi — semua jalan
+
+Catatan: tombol Picture-in-picture belum bisa saya buktikan lewat pengujian
+otomatis karena `requestPictureInPicture()` mensyaratkan gestur pengguna asli
+(klik skrip tidak dihitung). Kodenya ada dan `document.pictureInPictureEnabled`
+bernilai true; di browser asli tombolnya akan bekerja.
 
 ### Catatan kejujuran
 
@@ -166,15 +175,18 @@ memakai kode dan rute yang sama persis dengan yang sudah terbukti jalan.
 ## Ukuran bundle (produksi)
 
 ```
-dist/index.html                 0,84 kB │ gzip  0,48 kB
-dist/assets/index-*.css        17,40 kB │ gzip  4,55 kB
-dist/assets/Player-*.js         6,00 kB │ gzip  2,19 kB   <- lazy, saat diputar
-dist/assets/index-*.js        247,27 kB │ gzip 77,63 kB
+dist/index.html                 1,23 kB │ gzip   0,59 kB
+dist/assets/index-*.css        19,93 kB │ gzip   5,23 kB
+dist/assets/Player-*.js         9,06 kB │ gzip   3,22 kB   <- lazy, saat diputar
+dist/assets/index-*.js        248,38 kB │ gzip  77,88 kB
+dist/assets/hls-*.js          574,41 kB │ gzip 178,97 kB   <- lazy, hanya untuk .m3u8
 ```
+
+`hls.js` tidak ikut bundle awal. Baru diunduh saat ada stream `.m3u8` yang
+diputar, jadi pemutaran file biasa tidak terbebani.
 
 ## Langkah berikutnya
 
-- Pasang `hls.js` kalau sumbernya `.m3u8` (player sudah menampilkan peringatan
-  kalau browser tidak mendukung HLS native).
 - Isi `VITE_REMOTE_API` untuk jalur online.
+- Tambahkan subtitle WebVTT ke `ResolvedStream.subtitles` supaya tombol CC aktif.
 - Bungkus jadi desktop/APK: Tauri (desktop) atau Capacitor (Android).

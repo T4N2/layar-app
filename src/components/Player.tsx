@@ -8,17 +8,21 @@ import { useToast } from '../context/toast'
 import {
   IconBack,
   IconBack10,
+  IconCC,
   IconFilm,
   IconFullscreen,
   IconFwd10,
   IconPause,
+  IconPip,
   IconPlay,
+  IconSpeed,
   IconVolume,
 } from './Icons'
 
 /** Panjang timeline tiruan (detik) yang dipakai saat belum ada sumber video. */
 const DEMO_DURATION = 120
 const IDLE_MS = 2800
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 interface PlayerProps {
   item: Title
@@ -28,16 +32,24 @@ interface PlayerProps {
 export default function Player({ item, onClose }: PlayerProps) {
   const stream = useMemo(() => resolveStream(item, {}), [item])
   const hasSource = stream !== null
+  const isHls = stream?.kind === 'hls'
 
   const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const hlsRef = useRef<{ destroy: () => void } | null>(null)
 
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
   const [duration, setDuration] = useState(hasSource ? 0 : DEMO_DURATION)
+  const [bufferedEnd, setBufferedEnd] = useState(0)
+  const [waiting, setWaiting] = useState(false)
   const [volume, setVolume] = useState(0.8)
   const [muted, setMuted] = useState(false)
+  const [speed, setSpeed] = useState(1)
+  const [speedOpen, setSpeedOpen] = useState(false)
+  const [ccOn, setCcOn] = useState(true)
   const [idle, setIdle] = useState(false)
+  const [hlsError, setHlsError] = useState<string | null>(null)
   const toast = useToast()
 
   /* Nilai terbaru untuk dibaca dari dalam timer, disinkronkan lewat effect. */
@@ -63,6 +75,56 @@ export default function Player({ item, onClose }: PlayerProps) {
     if (!playingRef.current) return
     restartIdleTimer()
   }, [restartIdleTimer])
+
+  /* ---------------- HLS (hls.js, dimuat malas) ---------------- */
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !stream || stream.kind !== 'hls') return
+
+    // Safari / iOS memutar HLS native — langsung pakai src.
+    if (v.canPlayType('application/vnd.apple.mpegurl') !== '') {
+      v.src = stream.src
+      return
+    }
+
+    let cancelled = false
+    setHlsError(null)
+
+    void import('hls.js').then(({ default: Hls }) => {
+      if (cancelled) return
+      if (!Hls.isSupported()) {
+        setHlsError('Browser ini tidak mendukung HLS.')
+        return
+      }
+      const hls = new Hls({
+        // Pulih otomatis dari gangguan jaringan ringan.
+        fragLoadingMaxRetry: 4,
+        manifestLoadingMaxRetry: 2,
+      })
+      hlsRef.current = hls
+      hls.loadSource(stream.src)
+      hls.attachMedia(v)
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (!data.fatal) return
+        // Coba pulih sekali untuk error jaringan/media; kalau gagal, menyerah.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad()
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError()
+        } else {
+          hls.destroy()
+          hlsRef.current = null
+          setHlsError('Stream HLS gagal dimuat. Coba lagi nanti.')
+        }
+      })
+    })
+
+    return () => {
+      cancelled = true
+      hlsRef.current?.destroy()
+      hlsRef.current = null
+    }
+  }, [stream])
 
   /* ---------------- timeline tiruan ---------------- */
   useEffect(() => {
@@ -108,15 +170,35 @@ export default function Player({ item, onClose }: PlayerProps) {
     const sync = () => {
       if (Number.isFinite(v.duration) && v.duration > 0) setDuration(v.duration)
     }
+    const syncBuffered = () => {
+      try {
+        const b = v.buffered
+        if (b.length > 0) setBufferedEnd(b.end(b.length - 1))
+      } catch {
+        /* abaikan */
+      }
+    }
+    const onWaiting = () => setWaiting(true)
+    const onPlaying = () => setWaiting(false)
 
     sync()
     v.addEventListener('loadedmetadata', sync)
     v.addEventListener('canplay', sync)
     v.addEventListener('durationchange', sync)
+    v.addEventListener('progress', syncBuffered)
+    v.addEventListener('timeupdate', syncBuffered)
+    v.addEventListener('waiting', onWaiting)
+    v.addEventListener('playing', onPlaying)
+    v.addEventListener('stalled', onWaiting)
     return () => {
       v.removeEventListener('loadedmetadata', sync)
       v.removeEventListener('canplay', sync)
       v.removeEventListener('durationchange', sync)
+      v.removeEventListener('progress', syncBuffered)
+      v.removeEventListener('timeupdate', syncBuffered)
+      v.removeEventListener('waiting', onWaiting)
+      v.removeEventListener('playing', onPlaying)
+      v.removeEventListener('stalled', onWaiting)
     }
   }, [])
 
@@ -127,12 +209,19 @@ export default function Player({ item, onClose }: PlayerProps) {
     v.muted = muted
   }, [volume, muted])
 
-  /* Browser tanpa dukungan HLS native butuh hls.js. */
-  const hlsUnsupported = useMemo(() => {
-    if (!stream || stream.kind !== 'hls') return false
-    const probe = document.createElement('video')
-    return probe.canPlayType('application/vnd.apple.mpegurl') === ''
-  }, [stream])
+  useEffect(() => {
+    const v = videoRef.current
+    if (v) v.playbackRate = speed
+  }, [speed])
+
+  /* Subtitle: tampil/sembunyi via track.mode. */
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    for (const t of Array.from(v.textTracks)) {
+      t.mode = ccOn ? 'showing' : 'disabled'
+    }
+  }, [ccOn, stream])
 
   /* ---------------- sembunyikan kontrol saat diam ---------------- */
   useEffect(() => {
@@ -185,28 +274,43 @@ export default function Player({ item, onClose }: PlayerProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (speedOpen) {
+          setSpeedOpen(false)
+          return
+        }
         handleClose()
         return
       }
-      if (e.key === ' ') {
+      if (e.key === ' ' || e.key === 'k') {
         e.preventDefault()
         togglePlay()
         wake()
         return
       }
-      if (e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowLeft' || e.key === 'j') {
         seekBy(-10)
         wake()
         return
       }
-      if (e.key === 'ArrowRight') {
+      if (e.key === 'ArrowRight' || e.key === 'l') {
         seekBy(10)
+        wake()
+        return
+      }
+      if (e.key === 'f') {
+        toggleFullscreen()
+        wake()
+        return
+      }
+      if (e.key === 'm') {
+        setMuted((m) => !m)
         wake()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleClose, seekBy, togglePlay, wake])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleClose, seekBy, togglePlay, wake, speedOpen])
 
   /* ---------------- layar penuh ---------------- */
   const toggleFullscreen = () => {
@@ -219,6 +323,23 @@ export default function Player({ item, onClose }: PlayerProps) {
     }
   }
 
+  /* ---------------- picture-in-picture ---------------- */
+  const togglePip = async () => {
+    const v = videoRef.current
+    if (!v) return
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture()
+      } else if (document.pictureInPictureEnabled) {
+        await v.requestPictureInPicture()
+      } else {
+        toast.show('Picture-in-picture tidak didukung browser ini')
+      }
+    } catch {
+      toast.show('Gagal mengaktifkan picture-in-picture')
+    }
+  }
+
   const handleSeekClick = (e: MouseEvent<HTMLDivElement>) => {
     if (duration <= 0) return
     const rect = e.currentTarget.getBoundingClientRect()
@@ -226,7 +347,9 @@ export default function Player({ item, onClose }: PlayerProps) {
   }
 
   const ratio = duration > 0 ? current / duration : 0
+  const bufferedRatio = duration > 0 ? clamp(bufferedEnd / duration, 0, 1) : 0
   const sub = `${item.year} · ${item.genres.join(', ')}${item.type === 'series' ? ' · Serial' : ''}`
+  const hasSubtitles = !!stream?.subtitles?.length
 
   return (
     <div
@@ -241,13 +364,18 @@ export default function Player({ item, onClose }: PlayerProps) {
           <video
             ref={videoRef}
             className="player-video"
-            src={stream.src}
+            src={isHls ? undefined : stream.src}
             poster={stream.poster}
             playsInline
+            crossOrigin="anonymous"
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
             onEnded={() => setPlaying(false)}
-          />
+          >
+            {stream.subtitles?.map((s) => (
+              <track key={s.lang} kind="subtitles" src={s.src} srcLang={s.lang} label={s.label} />
+            ))}
+          </video>
         ) : (
           <div className="player-canvas">
             <div className="bg" style={{ background: posterGradient(item.colors) }} />
@@ -265,11 +393,15 @@ export default function Player({ item, onClose }: PlayerProps) {
           </div>
         )}
 
-        {hlsUnsupported && (
-          <div className="player-warn">
-            Browser ini belum bisa memutar HLS sendiri. Tambahkan <code>hls.js</code> untuk stream{' '}
-            <code>.m3u8</code>.
+        {hlsError ? (
+          <div className="player-canvas">
+            <div className="player-msg">
+              <h4>Stream gagal dimuat</h4>
+              <p>{hlsError}</p>
+            </div>
           </div>
+        ) : (
+          waiting && playing && <div className="player-spinner" aria-label="Memuat" />
         )}
 
         <div className="player-top">
@@ -282,7 +414,7 @@ export default function Player({ item, onClose }: PlayerProps) {
           </div>
         </div>
 
-        {!playing && (
+        {!playing && !waiting && (
           <button type="button" className="player-bigplay" aria-label="Putar" onClick={togglePlay}>
             <IconPlay />
           </button>
@@ -291,6 +423,7 @@ export default function Player({ item, onClose }: PlayerProps) {
         <div className="player-controls">
           <div className="seek" onClick={handleSeekClick}>
             <div className="seek-track">
+              <div className="seek-buffered" style={{ width: `${bufferedRatio * 100}%` }} />
               <div className="seek-fill" style={{ width: `${ratio * 100}%` }} />
               <div className="seek-knob" style={{ left: `${ratio * 100}%` }} />
             </div>
@@ -330,7 +463,56 @@ export default function Player({ item, onClose }: PlayerProps) {
             </div>
 
             <span className="spacer" />
+
+            {hasSubtitles && (
+              <button
+                type="button"
+                aria-label="Subtitle"
+                aria-pressed={ccOn}
+                onClick={() => setCcOn((c) => !c)}
+                style={{ opacity: ccOn ? 1 : 0.45 }}
+              >
+                <IconCC />
+              </button>
+            )}
+
+            <div className="speed-wrap">
+              <button
+                type="button"
+                aria-label="Kecepatan putar"
+                aria-expanded={speedOpen}
+                onClick={() => setSpeedOpen((o) => !o)}
+              >
+                <IconSpeed />
+              </button>
+              {speedOpen && (
+                <div className="speed-menu" role="menu" aria-label="Kecepatan putar">
+                  {SPEEDS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={speed === s}
+                      className={speed === s ? 'is-active' : ''}
+                      onClick={() => {
+                        setSpeed(s)
+                        setSpeedOpen(false)
+                        wake()
+                      }}
+                    >
+                      {s}×
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {speed !== 1 && <span className="speed-label muted">{speed}×</span>}
+
             <span className="badge-soft">{stream ? stream.kind.toUpperCase() : 'DEMO'}</span>
+
+            <button type="button" aria-label="Picture-in-picture" onClick={togglePip}>
+              <IconPip />
+            </button>
             <button type="button" aria-label="Layar penuh" onClick={toggleFullscreen}>
               <IconFullscreen />
             </button>

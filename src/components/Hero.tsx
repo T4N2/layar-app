@@ -12,6 +12,7 @@ export function Hero({ item, onPlay, onInfo }: HeroProps) {
   return (
     <section className="hero" aria-label="Sorotan">
       <div className="hero-bg" style={{ background: posterGradient(item.colors) }} />
+      <div className="hero-grain" aria-hidden="true" />
       <div className="hero-inner">
         <div className="hero-body">
           <span className="hero-kicker">Sorotan Minggu Ini</span>

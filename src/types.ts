@@ -43,6 +43,8 @@ export interface ResolvedStream {
   kind: StreamKind
   src: string
   poster?: string
+  /** Subtitle opsional (WebVTT). Dirender sebagai <track>. */
+  subtitles?: { src: string; lang: string; label: string }[]
 }
 
 export interface RowDef {

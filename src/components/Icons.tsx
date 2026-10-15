@@ -110,3 +110,32 @@ export function IconBack() {
     </svg>
   )
 }
+
+export function IconSpeed() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 4a8 8 0 0 1 8 8h-2.2A5.8 5.8 0 0 0 12 6.2V4z" />
+      <path d="M12 8.5 15.5 15h-7z" />
+      <path d="M4 16h16v2H4z" />
+    </svg>
+  )
+}
+
+export function IconPip() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h16v14H4z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M13.5 11H19v5h-5.5z" />
+    </svg>
+  )
+}
+
+export function IconCC() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h16v14H4z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M10.5 10.2c-.4-.6-1.2-1-2-1-1.5 0-2.6 1.2-2.6 2.8s1.1 2.8 2.6 2.8c.8 0 1.6-.4 2-1l-1-1c-.2.3-.6.5-1 .5-.8 0-1.4-.7-1.4-1.3s.6-1.3 1.4-1.3c.4 0 .8.2 1 .5z" />
+      <path d="M17.5 10.2c-.4-.6-1.2-1-2-1-1.5 0-2.6 1.2-2.6 2.8s1.1 2.8 2.6 2.8c.8 0 1.6-.4 2-1l-1-1c-.2.3-.6.5-1 .5-.8 0-1.4-.7-1.4-1.3s.6-1.3 1.4-1.3c.4 0 .8.2 1 .5z" />
+    </svg>
+  )
+}

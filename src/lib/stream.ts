@@ -7,11 +7,8 @@
 
    Sekarang isinya:
      - item punya file  -> kembalikan streamUrl-nya (kind 'file')
+     - .m3u8            -> kind 'hls' (Player memuat hls.js otomatis)
      - item tanpa file  -> null, player menampilkan placeholder
-
-   Mau tambah HLS? Cukup bercabang di sini:
-     if (item.media.relPath.endsWith('.m3u8'))
-       return { kind: 'hls', src: item.media.streamUrl }
    ============================================================ */
 
 import type { ResolvedStream, Title } from '../types'
@@ -32,7 +29,12 @@ export function resolveStream(
   void opts
 
   if (item.media && item.media.streamUrl) {
-    return { kind: 'file', src: item.media.streamUrl }
+    const src = item.media.streamUrl
+    // HLS: .m3u8 -> butuh hls.js di browser non-Safari (ditangani <Player>).
+    if (/\.m3u8($|\?)/i.test(src)) {
+      return { kind: 'hls', src }
+    }
+    return { kind: 'file', src }
   }
 
   // Belum ada file untuk judul ini (mis. katalog demo) -> placeholder.

@@ -4,19 +4,23 @@
    ============================================================ */
 
 :root {
-  --bg: #0a0a0f;
-  --bg-soft: #101018;
-  --surface: #15151f;
-  --surface-2: #1d1d2a;
-  --line: #26263a;
-  --text: #f4f4f8;
-  --muted: #9a9ab0;
-  --accent: #7c5cff;
-  --accent-2: #ff5c8a;
-  --gold: #ffb020;
+  /* ---- identitas "bioskop": hitam hangat + amber cahaya proyektor ---- */
+  --bg: #0c0a07;
+  --bg-soft: #12100b;
+  --surface: #171410;
+  --surface-2: #201b14;
+  --line: #2b251b;
+  --text: #f6f2e9;
+  --muted: #a39c8c;
+  --accent: #f5a524;
+  --accent-2: #ff7847;
+  --accent-ink: #1a1206;
+  --gold: #ffc53d;
+  --violet: #7c5cff;
   --radius: 14px;
   --header-h: 68px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
 
   color-scheme: dark;
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
